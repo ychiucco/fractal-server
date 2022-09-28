@@ -22,10 +22,9 @@ from parsl import channels as parsl_channels
 from parsl import launchers as parsl_launchers
 from parsl import providers as parsl_providers
 from parsl.addresses import address_by_hostname
-from parsl.config import Config
+from parsl.dataflow.dflow import DataFlowKernel
 from parsl.dataflow.dflow import DataFlowKernelLoader
 from parsl.executors import HighThroughputExecutor
-from parsl.monitoring.monitoring import MonitoringHub
 
 from ...config import settings
 
@@ -77,7 +76,7 @@ class ParslConfiguration:
         name: str,
         provider_name: str,
         type: str,
-        workflow_id: str,
+        workflow_id: int,
         **kwargs,
     ):
         if type == "HighThroughputExecutor":
@@ -247,73 +246,24 @@ def load_parsl_config(
     enable_monitoring: bool = True,
 ) -> None:
 
+    # FIXME TODO: monitoring setup
     # Define monitoring hub and finalize configuration
-    if enable_monitoring:
-        monitoring = MonitoringHub(
-            hub_address=address_by_hostname(),
-            workflow_name="fractal",
-        )
-    else:
-        monitoring = None
+    # if enable_monitoring:
+    #     monitoring = MonitoringHub(
+    #         hub_address=address_by_hostname(),
+    #         workflow_name="fractal",
+    #     )
+    # else:
+    #     monitoring = None
 
-    try:
-        dfk = DataFlowKernelLoader.dfk()
-        old_executor_labels = [
-            executor_label for executor_label in dfk.executors.keys()
-        ]
-        logger.info(
-            f"DFK {dfk} exists, with {len(dfk.executors)} executors: "
-            f"{old_executor_labels}"
-        )
-        logger.info(
-            f"Adding {len(parsl_config.executors)} new executors: "
-            f"{parsl_config.executor_labels}"
-        )
-
-        # FIXME: what if an executor was already there?
-        # (re-submitting same workflow?)
-
-        dfk.add_executors(parsl_config.executors)
-
-    # FIXME: better exception handling
-    except RuntimeError:
-        config = Config(
-            executors=parsl_config.executors,
-            monitoring=monitoring,
-            max_idletime=20.0,
-        )
-        logger.info(
-            "DFK probably missing, "
-            "proceed with parsl.clear and parsl.config.Config"
-        )
-        parsl.clear()
-        parsl.load(config)
-    dfk = DataFlowKernelLoader.dfk()
-    executor_labels = [
-        executor_label for executor_label in dfk.executors.keys()
-    ]
-    logger.info(
-        f"DFK {dfk} now has {len(parsl_config.executor_labels)} executors: "
-        f"{executor_labels}"
-    )
+    config = parsl.config.Config(executors=parsl_config.executors)
+    dfk = DataFlowKernel(config=config)
+    # dfk.add_executors(parsl_config.executors)
+    return dfk
 
 
-def shutdown_executors(*, workflow_id: str):
-    # Remove executors from parsl DFK
-    # FIXME decorate with monitoring logs, as in:
-    # https://github.com/Parsl/parsl/blob/master/parsl/dataflow/dflow.py#L1106
-    dfk = DataFlowKernelLoader.dfk()
-    for label, executor in dfk.executors.items():
-        if label.startswith(f"{workflow_id}___"):
-            executor.shutdown()
-            logger.info(f"SHUTTING DOWN {label}")
-    executor_labels = [
-        executor_label for executor_label in dfk.executors.keys()
-    ]
-    logger.info(
-        f"DFK {dfk} now has {len(executor_labels)} executors: "
-        f"{executor_labels}"
-    )
+def shutdown_data_flow_kernel(dfk: DataFlowKernel):
+    dfk.cleanup()
 
 
 def get_unique_executor(*, workflow_id: int, task_executor: str = None):

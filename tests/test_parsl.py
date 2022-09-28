@@ -63,6 +63,29 @@ def test_parsl_local_config():
     assert parsl_app().result() == 42
 
 
+def test_parsl_dfk():
+    parsl_config = ParslConfiguration()
+    parsl_config.add_channel(name="default", type="LocalChannel")
+    parsl_config.add_launcher(
+        name="default", type="SingleNodeLauncher", debug=True
+    )
+    parsl_config.add_provider(
+        name="default",
+        type="LocalProvider",
+        launcher_name="default",
+        channel_name="default",
+        init_blocks=1,
+        min_blocks=0,
+        max_blocks=4,
+    )
+    parsl_config.add_executor(
+        name="local",
+        type="HighThroughputExecutor",
+        provider_name="default",
+        address=address_by_hostname(),
+    )
+
+
 @pytest.mark.skipif(not HAS_DOCKER_SLURM, reason="no dockerised slurm cluster")
 def test_parsl_slurm_config(ssh_params):
     """
@@ -114,6 +137,7 @@ def test_parsl_slurm_config(ssh_params):
     assert result == 1.0
 
 
+@pytest.mark.skipif(not HAS_DOCKER_SLURM, reason="no dockerised slurm cluster")
 async def test_apply_workflow_slurm(
     nontrivial_workflow, patch_settings, ssh_params
 ):

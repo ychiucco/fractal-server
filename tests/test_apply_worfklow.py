@@ -62,8 +62,10 @@ def test_atomic_task_factory(task, message, nfiles, tmp_path, patch_settings):
     workflow_id = 0
 
     parsl_config = generate_parsl_config(workflow_id=workflow_id)
-    load_parsl_config(parsl_config=parsl_config, enable_monitoring=False)
-
+    data_flow_kernel = load_parsl_config(
+        parsl_config=parsl_config, enable_monitoring=False
+    )
+    debug(data_flow_kernel)
     input_path_str = "/input/path"
     output_path = tmp_path
     metadata = {"index": list(range(N_INDICES))}

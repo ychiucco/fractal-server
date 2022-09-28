@@ -27,7 +27,6 @@ from .runner_utils import generate_parsl_config
 from .runner_utils import get_unique_executor
 from .runner_utils import load_parsl_config
 from .runner_utils import ParslConfiguration
-from .runner_utils import shutdown_executors
 
 
 @join_app
@@ -261,8 +260,6 @@ async def submit_workflow(
     output_dataset.meta = await async_wrap(get_app_future_result)(
         app_future=final_metadata
     )
-
-    shutdown_executors(workflow_id=workflow.id)
 
     db.add(output_dataset)
 
