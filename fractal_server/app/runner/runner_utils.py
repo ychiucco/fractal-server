@@ -94,7 +94,7 @@ class ParslConfiguration:
 
     @property
     def executor_labels(self):
-        return list(self._executor_dict.keys())
+        return list(x.label for x in self._executor_dict.values())
 
 
 def generate_parsl_config(
@@ -244,7 +244,7 @@ def load_parsl_config(
     *,
     parsl_config: ParslConfiguration,
     enable_monitoring: bool = True,
-) -> None:
+) -> DataFlowKernel:
 
     # FIXME TODO: monitoring setup
     # Define monitoring hub and finalize configuration
@@ -258,7 +258,6 @@ def load_parsl_config(
 
     config = parsl.config.Config(executors=parsl_config.executors)
     dfk = DataFlowKernel(config=config)
-    # dfk.add_executors(parsl_config.executors)
     return dfk
 
 

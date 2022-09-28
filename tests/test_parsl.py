@@ -17,6 +17,7 @@ from parsl.providers import SlurmProvider
 
 from .fixtures_workflow import LEN_NONTRIVIAL_WORKFLOW
 from fractal_server.app.runner.parsl_runner import _process_workflow
+from fractal_server.app.runner.runner_utils import load_parsl_config
 from fractal_server.app.runner.runner_utils import ParslConfiguration
 
 
@@ -83,7 +84,12 @@ def test_parsl_dfk():
         type="HighThroughputExecutor",
         provider_name="default",
         address=address_by_hostname(),
+        workflow_id=1,
     )
+    assert "1___local" in parsl_config.executor_labels
+    dfk = load_parsl_config(parsl_config=parsl_config)
+    parsl_app = PythonApp(hello, executors=["1___local"], data_flow_kernel=dfk)
+    assert parsl_app().result() == 42
 
 
 @pytest.mark.skipif(not HAS_DOCKER_SLURM, reason="no dockerised slurm cluster")
