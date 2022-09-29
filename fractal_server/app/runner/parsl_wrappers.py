@@ -8,6 +8,7 @@ from typing import Optional
 from typing import Union
 
 from parsl.app.python import PythonApp
+from parsl.dataflow.dflow import DataFlowKernel
 from parsl.dataflow.futures import AppFuture
 
 from ..models.task import Task
@@ -46,10 +47,13 @@ def _task_app(
     metadata: Optional[Dict[str, Any]],
     task_args: Optional[Dict[str, Any]],
     inputs,
+    data_flow_kernel: DataFlowKernel,
     executors: Union[List[str], Literal["all"]] = "all",
 ) -> AppFuture:
 
-    app = PythonApp(_task_fun, executors=executors)
+    app = PythonApp(
+        _task_fun, executors=executors, data_flow_kernel=data_flow_kernel
+    )
     # TODO: can we reassign app.__name__, for clarity in monitoring?
     return app(
         task=task,
@@ -93,10 +97,15 @@ def _task_parallel_app(
     metadata: Optional[Dict[str, Any]],
     task_args: Optional[Dict[str, Any]],
     inputs,
+    data_flow_kernel: DataFlowKernel,
     executors: Union[List[str], Literal["all"]] = "all",
 ) -> AppFuture:
 
-    app = PythonApp(_task_parallel_fun, executors=executors)
+    app = PythonApp(
+        _task_parallel_fun,
+        executors=executors,
+        data_flow_kernel=data_flow_kernel,
+    )
     return app(
         task=task,
         component=component,
@@ -127,7 +136,12 @@ def _collect_results_app(
     *,
     metadata: Dict[str, Any],
     inputs: List[AppFuture],
+    data_flow_kernel: DataFlowKernel,
     executors: Union[List[str], Literal["all"]] = "all",
 ) -> AppFuture:
-    app = PythonApp(_collect_results_fun, executors=executors)
+    app = PythonApp(
+        _collect_results_fun,
+        executors=executors,
+        data_flow_kernel=data_flow_kernel,
+    )
     return app(metadata=metadata, inputs=inputs)
