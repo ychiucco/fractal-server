@@ -10,6 +10,7 @@ from typing import Union
 
 from parsl.app.app import join_app
 from parsl.app.python import PythonApp
+from parsl.dataflow.dflow import DataFlowKernel
 from parsl.dataflow.futures import AppFuture
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,83 @@ from .runner_utils import load_parsl_config
 from .runner_utils import ParslConfiguration
 
 
+class DataFlowContext:
+    # TODO: Turn in context manager for dfk and close dfk on exit
+    def __init__(self, data_flow_kernel: DataFlowKernel):
+        self.dfk = data_flow_kernel
+
+    def atomic_task_factory(self, **kwargs) -> AppFuture:
+        def _atomic_task_factory_fun(
+            *,
+            task: Union[Task, Subtask, PreprocessedTask],
+            input_paths: List[Path],
+            output_path: Path,
+            metadata: Optional[Union[Future, Dict[str, Any]]] = None,
+            depends_on: Optional[List[AppFuture]] = None,
+            workflow_id: int = None,
+        ):
+            """
+            Single task processing
+
+            Create a single PARSL app that encapsulates the task at hand and
+            its parallelization.
+            """
+            if depends_on is None:
+                depends_on = []
+
+            task_args = task._arguments
+            task_executor = get_unique_executor(
+                workflow_id=workflow_id, task_executor=task.executor
+            )
+            logging.info(
+                f'Starting "{task.name}" task on "{task_executor}" executor.'
+            )
+
+            parall_level = task.parallelization_level
+            if metadata and parall_level:
+                parall_item_gen = (
+                    par_item for par_item in metadata[parall_level]
+                )
+                dependencies = [
+                    _task_parallel_app(
+                        task=task,
+                        input_paths=input_paths,
+                        output_path=output_path,
+                        metadata=metadata,
+                        task_args=task_args,
+                        component=item,
+                        inputs=[],
+                        executors=[task_executor],
+                        data_flow_kernel=self.dfk,
+                    )
+                    for item in parall_item_gen
+                ]
+                res = _collect_results_app(
+                    metadata=deepcopy(metadata),
+                    inputs=dependencies,
+                    data_flow_kernel=self.dfk,
+                )
+                return res
+            else:
+                res = _task_app(
+                    task=task,
+                    input_paths=input_paths,
+                    output_path=output_path,
+                    metadata=metadata,
+                    task_args=task_args,
+                    inputs=depends_on,
+                    executors=[task_executor],
+                    data_flow_kernel=self.dfk,
+                )
+                return res
+
+        # return _atomic_task_factory_fun(**kwargs)
+        join_app = PythonApp(
+            _atomic_task_factory_fun, join=True, data_flow_kernel=self.dfk
+        )
+        return join_app(**kwargs)
+
+
 @join_app
 def _atomic_task_factory(
     *,
@@ -43,7 +121,7 @@ def _atomic_task_factory(
     Single task processing
 
     Create a single PARSL app that encapsulates the task at hand and
-    its parallelizazion.
+    its parallelization.
     """
     if depends_on is None:
         depends_on = []
@@ -89,10 +167,12 @@ def _atomic_task_factory(
 
 
 def _process_workflow(
+    *,
     task: Union[Task, Subtask],
     input_paths: List[Path],
     output_path: Path,
     metadata: Dict[str, Any],
+    data_flow_kernel: DataFlowKernel,
     parsl_config: Optional[ParslConfiguration] = None,
 ) -> AppFuture:
     """
@@ -117,25 +197,28 @@ def _process_workflow(
     this_metadata = deepcopy(metadata)
 
     workflow_id = task.id
-    if not parsl_config:
-        parsl_config = generate_parsl_config(workflow_id=workflow_id)
-    load_parsl_config(parsl_config=parsl_config)
+    # if not parsl_config:
+    #     parsl_config = generate_parsl_config(workflow_id=workflow_id)
+    # load_parsl_config(parsl_config=parsl_config)
 
-    apps: List[PythonApp] = []
+    app_futures: List[PythonApp] = []
+
+    dfk_ctx = DataFlowContext(data_flow_kernel=data_flow_kernel)
 
     for i, task in enumerate(preprocessed):
-        this_task_app = _atomic_task_factory(
+        this_task_app_future = dfk_ctx.atomic_task_factory(
             task=task,
             input_paths=this_input,
             output_path=this_output,
-            metadata=apps[i - 1] if i > 0 else this_metadata,
+            metadata=app_futures[i - 1] if i > 0 else this_metadata,
             workflow_id=workflow_id,
         )
-        apps.append(this_task_app)
+        app_futures.append(this_task_app_future)
         this_input = [this_output]
 
-    # Got to make sure that it is executed serially, task by task
-    return apps[-1]
+    # Because of how the dependencies are nested, calling last app
+    # guarantees that the whole workflow is executed in the correct order.
+    return app_futures[-1]
 
 
 async def auto_output_dataset(
