@@ -16,6 +16,8 @@ from parsl.providers import LocalProvider
 from parsl.providers import SlurmProvider
 
 from .fixtures_workflow import LEN_NONTRIVIAL_WORKFLOW
+from fractal_server.app.runner.parsl_local_app import LocalDataFlowKernelLoader
+from fractal_server.app.runner.parsl_local_app import LocalPythonApp
 from fractal_server.app.runner.parsl_runner import _process_workflow
 from fractal_server.app.runner.runner_utils import load_parsl_config
 from fractal_server.app.runner.runner_utils import ParslConfiguration
@@ -60,7 +62,7 @@ def test_parsl_local_config():
     parsl.clear()
     parsl.load(Config(executors=[htex]))
 
-    parsl_app = PythonApp(hello, executors=["local"])
+    parsl_app = LocalPythonApp(hello, executors=["local"])
     assert parsl_app().result() == 42
 
 
@@ -87,8 +89,8 @@ def test_parsl_dfk():
         workflow_id=1,
     )
     assert "1___local" in parsl_config.executor_labels
-    dfk = load_parsl_config(parsl_config=parsl_config)
-    parsl_app = PythonApp(hello, executors=["1___local"], data_flow_kernel=dfk)
+    dfk, dfk_id = load_parsl_config(parsl_config=parsl_config)
+    parsl_app = LocalPythonApp(hello, dfk_id=dfk_id, executors=["1___local"])
     assert parsl_app().result() == 42
 
 
@@ -115,13 +117,60 @@ def test_parsl_dfk_nested():
         workflow_id=1,
     )
     assert "1___local" in parsl_config.executor_labels
-    dfk = load_parsl_config(parsl_config=parsl_config)
+    dfk, dfk_id = load_parsl_config(parsl_config=parsl_config)
 
-    def atomic_task_factory_mock(f, *, data_flow_kernel):
-        parsl_app = PythonApp(f, executors=["1___local"], data_flow_kernel=dfk)
+    def atomic_task_factory_mock(f, *, dfk_id):
+        parsl_app = LocalPythonApp(f, executors=["1___local"], dfk_id=dfk_id)
         return parsl_app()
 
-    app_future = atomic_task_factory_mock(hello, data_flow_kernel=dfk)
+    app_future = atomic_task_factory_mock(hello, dfk_id=dfk_id)
+    assert app_future.result() == 42
+
+
+def test_parsl_dfk_nested2():
+    parsl_config = ParslConfiguration()
+    parsl_config.add_channel(name="default", type="LocalChannel")
+    parsl_config.add_launcher(
+        name="default", type="SingleNodeLauncher", debug=True
+    )
+    parsl_config.add_provider(
+        name="default",
+        type="LocalProvider",
+        launcher_name="default",
+        channel_name="default",
+        init_blocks=1,
+        min_blocks=0,
+        max_blocks=4,
+    )
+    parsl_config.add_executor(
+        name="local",
+        type="HighThroughputExecutor",
+        provider_name="default",
+        address=address_by_hostname(),
+        workflow_id=1,
+    )
+    assert "1___local" in parsl_config.executor_labels
+    dfk, dfk_id = load_parsl_config(parsl_config=parsl_config)
+
+    debug(dfk_id)
+    assert dfk is LocalDataFlowKernelLoader.dfk(dfk_id=dfk_id)
+    assert dfk_id in LocalDataFlowKernelLoader._local_dfk
+    assert LocalDataFlowKernelLoader.dfk(dfk_id=dfk_id)
+    debug(id(LocalDataFlowKernelLoader))
+    debug(id(LocalDataFlowKernelLoader._local_dfk))
+    from os import getpid
+
+    debug(getpid())
+
+    def atomic_task_factory_mock(inner, *, dfk_id):
+        parsl_app = LocalPythonApp(
+            inner, executors=["1___local"], dfk_id=dfk_id
+        )
+        return parsl_app()
+
+    inner = LocalPythonApp(hello, executors=["1___local"], dfk_id=dfk_id)
+    app_future = atomic_task_factory_mock(inner, dfk_id=dfk_id)
+
     assert app_future.result() == 42
 
 
