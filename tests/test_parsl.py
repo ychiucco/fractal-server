@@ -92,6 +92,84 @@ def test_parsl_dfk():
     assert parsl_app().result() == 42
 
 
+def test_parsl_dfk_nested():
+    parsl_config = ParslConfiguration()
+    parsl_config.add_channel(name="default", type="LocalChannel")
+    parsl_config.add_launcher(
+        name="default", type="SingleNodeLauncher", debug=True
+    )
+    parsl_config.add_provider(
+        name="default",
+        type="LocalProvider",
+        launcher_name="default",
+        channel_name="default",
+        init_blocks=1,
+        min_blocks=0,
+        max_blocks=4,
+    )
+    parsl_config.add_executor(
+        name="local",
+        type="HighThroughputExecutor",
+        provider_name="default",
+        address=address_by_hostname(),
+        workflow_id=1,
+    )
+    assert "1___local" in parsl_config.executor_labels
+    dfk = load_parsl_config(parsl_config=parsl_config)
+
+    def atomic_task_factory_mock(f, *, data_flow_kernel):
+        parsl_app = PythonApp(f, executors=["1___local"], data_flow_kernel=dfk)
+        return parsl_app()
+
+    app_future = atomic_task_factory_mock(hello, data_flow_kernel=dfk)
+    assert app_future.result() == 42
+
+
+def test_parsl_dfk_submit(tmp_path, nontrivial_workflow, patch_settings):
+    parsl_config = ParslConfiguration()
+    parsl_config.add_channel(name="default", type="LocalChannel")
+    parsl_config.add_launcher(
+        name="default", type="SingleNodeLauncher", debug=True
+    )
+    parsl_config.add_provider(
+        name="default",
+        type="LocalProvider",
+        launcher_name="default",
+        channel_name="default",
+        init_blocks=1,
+        min_blocks=0,
+        max_blocks=4,
+    )
+    parsl_config.add_executor(
+        name="cpu-low",
+        type="HighThroughputExecutor",
+        provider_name="default",
+        address=address_by_hostname(),
+        workflow_id=1,
+    )
+    dfk = load_parsl_config(parsl_config=parsl_config)
+    app = _process_workflow(
+        task=nontrivial_workflow,
+        input_paths=[tmp_path / "0.json"],
+        output_path=tmp_path / "0.json",
+        metadata={},
+        parsl_config=parsl_config,
+        data_flow_kernel=dfk,
+    )
+    debug(app)
+    app.result()
+
+    print(list(tmp_path.glob("*.json")))
+    for f in tmp_path.glob("*.json"):
+        with open(f, "r") as output_file:
+            data = json.load(output_file)
+            debug(data)
+    assert len(data) == LEN_NONTRIVIAL_WORKFLOW
+    assert data[0]["message"] == "dummy0"
+    assert data[1]["message"] == "dummy1"
+    assert data[2]["message"] == "dummy2"
+
+
 @pytest.mark.skipif(not HAS_DOCKER_SLURM, reason="no dockerised slurm cluster")
 def test_parsl_slurm_config(ssh_params):
     """
