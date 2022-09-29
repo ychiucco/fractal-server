@@ -13,9 +13,11 @@ This file is part of Fractal and was originally developed by eXact lab S.r.l.
 Institute for Biomedical Research and Pelkmans Lab from the University of
 Zurich.
 """
-from logging import FileHandler
-from logging import Formatter
+# from logging import FileHandler
+# from logging import Formatter
 from logging import getLogger
+from typing import Tuple
+from uuid import uuid4
 
 import parsl
 from parsl import channels as parsl_channels
@@ -27,15 +29,18 @@ from parsl.dataflow.dflow import DataFlowKernelLoader
 from parsl.executors import HighThroughputExecutor
 
 from ...config import settings
+from .parsl_local_app import LocalDataFlowKernelLoader
+
+# import logging
 
 
-formatter = Formatter("%(asctime)s; %(levelname)s; %(message)s")
+# formatter = Formatter("%(asctime)s; %(levelname)s; %(message)s")
 
 logger = getLogger(__name__)
-handler = FileHandler("parsl_executors.log", mode="a")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel("INFO")
+# handler = FileHandler("parsl_executors.log", mode="a")
+# handler.setFormatter(formatter)
+# logger.addHandler(handler)
+# logger.setLevel("INFO")
 
 
 def add_prefix(*, workflow_id: int, executor_label: str):
@@ -244,7 +249,7 @@ def load_parsl_config(
     *,
     parsl_config: ParslConfiguration,
     enable_monitoring: bool = True,
-) -> DataFlowKernel:
+) -> Tuple[DataFlowKernel, str]:
 
     # FIXME TODO: monitoring setup
     # Define monitoring hub and finalize configuration
@@ -257,8 +262,10 @@ def load_parsl_config(
     #     monitoring = None
 
     config = parsl.config.Config(executors=parsl_config.executors)
-    dfk = DataFlowKernel(config=config)
-    return dfk
+    dfk_id = uuid4().hex
+    dfk = LocalDataFlowKernelLoader.load(dfk_id=dfk_id, config=config)
+    logger.debug(f"DFK ID: {dfk_id}")
+    return dfk, dfk_id
 
 
 def shutdown_data_flow_kernel(dfk: DataFlowKernel):
